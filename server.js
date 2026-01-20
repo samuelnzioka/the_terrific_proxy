@@ -63,6 +63,52 @@ app.get("/api/wars", async (req, res) => {
 });
 
 // =========================
+//   WARS – FULL ARTICLE (GUARDIAN CONTENT)
+// =========================
+app.get("/api/wars/article", async (req, res) => {
+  try {
+    const id = (req.query.id || "").toString().trim();
+
+    if (!id) {
+      return res.status(400).json({
+        error: "Missing required query param: id"
+      });
+    }
+
+    const url =
+      `https://content.guardianapis.com/${encodeURIComponent(id)}` +
+      `?show-fields=trailText,thumbnail,body,bodyText` +
+      `&api-key=${process.env.GUARDIAN_API_KEY}`;
+
+    const response = await fetch(url);
+    const json = await response.json();
+
+    const content = json?.response?.content;
+    if (!content) {
+      throw new Error("Invalid Guardian article response");
+    }
+
+    res.json({
+      id: content.id,
+      title: content.webTitle,
+      summary: content.fields?.trailText || "",
+      image: content.fields?.thumbnail || null,
+      date: content.webPublicationDate,
+      source: "The Guardian",
+      url: content.webUrl,
+      body: content.fields?.body || "",
+      bodyText: content.fields?.bodyText || ""
+    });
+  } catch (err) {
+    console.error("Guardian Wars Article API Error:", err.message);
+    res.status(500).json({
+      error: "Failed to load wars article",
+      details: err.message
+    });
+  }
+});
+
+// =========================
 //   REDDIT – MEMES (ENDLESS)
 // =========================
 app.get("/api/memes", async (req, res) => {
