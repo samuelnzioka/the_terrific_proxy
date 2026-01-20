@@ -75,14 +75,47 @@ app.get("/api/wars/article", async (req, res) => {
       });
     }
 
+    if (!process.env.GUARDIAN_API_KEY) {
+      return res.status(500).json({
+        error: "Server misconfigured: missing GUARDIAN_API_KEY"
+      });
+    }
+
+    const safeId = id
+      .split("/")
+      .map(seg => encodeURIComponent(seg))
+      .join("/");
+
     const url =
-      `https://content.guardianapis.com/${encodeURIComponent(id)}` +
+      `https://content.guardianapis.com/${safeId}` +
       `?show-fields=trailText,thumbnail,body,bodyText` +
       `&api-key=${process.env.GUARDIAN_API_KEY}`;
 
     const response = await fetch(url);
-    const json = await response.json();
+    const contentType = response.headers.get("content-type") || "";
 
+    // Guardian should return JSON, but be defensive.
+    const rawText = contentType.includes("application/json")
+      ? null
+      : await response.text();
+
+    if (!response.ok) {
+      if (rawText !== null) {
+        return res.status(response.status).json({
+          error: "Failed to load wars article",
+          details: rawText.slice(0, 500)
+        });
+      }
+
+      const errJson = await response.json();
+      const details = errJson?.response?.message || errJson?.message || `Guardian HTTP ${response.status}`;
+      return res.status(response.status).json({
+        error: "Failed to load wars article",
+        details
+      });
+    }
+
+    const json = rawText !== null ? null : await response.json();
     const content = json?.response?.content;
     if (!content) {
       throw new Error("Invalid Guardian article response");
@@ -96,8 +129,7 @@ app.get("/api/wars/article", async (req, res) => {
       date: content.webPublicationDate,
       source: "The Guardian",
       url: content.webUrl,
-      body: content.fields?.body || "",
-      bodyText: content.fields?.bodyText || ""
+      body: content.fields?.body ?? content.fields?.bodyText ?? ""
     });
   } catch (err) {
     console.error("Guardian Wars Article API Error:", err.message);
