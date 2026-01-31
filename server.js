@@ -182,33 +182,54 @@ app.get("/api/memes", async (req, res) => {
 });
 
 // =========================
-//   EXPLAINERS – GUARDIAN API
+//   EXPLAINERS – GUARDIAN API (WITH FALLBACK)
 // =========================
 app.get("/api/explainers", async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
 
-    const url =
+    // -------- PRIMARY QUERY (Explainer-style headlines)
+    const primaryUrl =
       `https://content.guardianapis.com/search` +
-      `?q=geopolitics OR propaganda OR war OR information warfare` +
-      `&section=world|politics|international` +
-      `&show-fields=headline,trailText,bodyText,thumbnail` +
-      `&order-by=newest` +
-      `&page-size=6` +
+      `?q=how OR why OR explained OR "what is"` +
+      `&show-fields=trailText,bodyText,thumbnail` +
+      `&order-by=relevance` +
+      `&page-size=15` +
       `&page=${page}` +
       `&api-key=${process.env.GUARDIAN_API_KEY}`;
 
-    const response = await fetch(url);
-    const data = await response.json();
+    const primaryRes = await fetch(primaryUrl);
+    const primaryData = await primaryRes.json();
 
-    if (!data.response || !data.response.results) {
-      return res.json({
-        page: page,
-        explainers: []
-      });
+    let explainers = [];
+
+    if (primaryData.response?.results) {
+      explainers = primaryData.response.results
+        .filter(isExplainer)
+        .slice(0, 6);
     }
 
-    const articles = data.response.results.map(a => ({
+    // -------- FALLBACK QUERY (Background / analysis content)
+    if (explainers.length === 0) {
+      const fallbackUrl =
+        `https://content.guardianapis.com/search` +
+        `?tag=tone/analysis|tone/features` +
+        `&show-fields=trailText,bodyText,thumbnail` +
+        `&order-by=relevance` +
+        `&page-size=6` +
+        `&page=${page}` +
+        `&api-key=${process.env.GUARDIAN_API_KEY}`;
+
+      const fallbackRes = await fetch(fallbackUrl);
+      const fallbackData = await fallbackRes.json();
+
+      if (fallbackData.response?.results) {
+        explainers = fallbackData.response.results;
+      }
+    }
+
+    // -------- MAP RESPONSE
+    const articles = explainers.map(a => ({
       id: a.id,
       title: a.webTitle,
       summary: a.fields?.trailText || '',
@@ -220,18 +241,32 @@ app.get("/api/explainers", async (req, res) => {
     }));
 
     res.json({
-      page: page,
-      explainers: articles
+      page,
+      explainers: articles,
+      fallbackUsed: explainers.length > 0 ? false : true
     });
 
   } catch (err) {
     console.error("Guardian Explainers API Error:", err.message);
     res.status(500).json({
-      error: "Failed to load explainers data",
-      details: err.message
+      error: "Failed to load explainers data"
     });
   }
 });
+
+// -------- Explainer classifier
+function isExplainer(article) {
+  const title = article.webTitle.toLowerCase();
+
+  return (
+    title.startsWith("how ") ||
+    title.startsWith("why ") ||
+    title.startsWith("what is") ||
+    title.startsWith("what are") ||
+    title.includes("explained") ||
+    title.includes("in context")
+  );
+}
 
 // =========================
 //   SPORTS – NEWSAPI
