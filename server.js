@@ -254,6 +254,43 @@ app.get("/api/explainers", async (req, res) => {
   }
 });
 
+// =========================
+//   SINGLE EXPLAINER – GUARDIAN API
+// =========================
+app.get("/api/explainers/:id", async (req, res) => {
+  try {
+    const guardianId = req.params.id;
+
+    const url =
+      `https://content.guardianapis.com/${guardianId}` +
+      `?show-fields=headline,trailText,bodyText,thumbnail` +
+      `&api-key=${process.env.GUARDIAN_API_KEY}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.response?.content) {
+      return res.status(404).json({ error: "Explainer not found" });
+    }
+
+    const a = data.response.content;
+
+    res.json({
+      id: a.id,
+      title: a.webTitle,
+      summary: a.fields?.trailText || "",
+      body: a.fields?.bodyText || "",
+      image: a.fields?.thumbnail || null,
+      date: a.webPublicationDate,
+      source: "The Guardian",
+      url: a.webUrl
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load explainer" });
+  }
+});
+
 // -------- Explainer classifier
 function isExplainer(article) {
   const title = article.webTitle.toLowerCase();
