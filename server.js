@@ -193,7 +193,7 @@ app.get("/api/explainers", async (req, res) => {
       `https://content.guardianapis.com/search` +
       `?q=how OR why OR explained OR "what is"` +
       `&show-fields=trailText,bodyText,thumbnail` +
-      `&order-by=relevance` +
+      `&order-by=newest` +
       `&page-size=15` +
       `&page=${page}` +
       `&api-key=${process.env.GUARDIAN_API_KEY}`;
@@ -215,7 +215,7 @@ app.get("/api/explainers", async (req, res) => {
         `https://content.guardianapis.com/search` +
         `?tag=tone/analysis|tone/features` +
         `&show-fields=trailText,bodyText,thumbnail` +
-        `&order-by=relevance` +
+        `&order-by=newest` +
         `&page-size=6` +
         `&page=${page}` +
         `&api-key=${process.env.GUARDIAN_API_KEY}`;
@@ -228,21 +228,54 @@ app.get("/api/explainers", async (req, res) => {
       }
     }
 
-    // -------- MAP RESPONSE
-    const articles = explainers.map(a => ({
-      id: a.id,
-      title: a.webTitle,
-      summary: a.fields?.trailText || '',
-      body: a.fields?.bodyText || '',
-      image: a.fields?.thumbnail || null,
-      date: a.webPublicationDate,
-      source: 'The Guardian',
-      url: a.webUrl
-    }));
+    // -------- MAP RESPONSE WITH AGE BUCKETS
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const articles = explainers.map(a => {
+      const published = new Date(a.webPublicationDate).getTime();
+      const ageDays = Math.floor((now - published) / DAY);
+
+      let category = "recent";
+      if (ageDays > 90) category = "timeless";
+      else if (ageDays > 30) category = "still-relevant";
+
+      return {
+        id: a.id,
+        title: a.webTitle,
+        summary: a.fields?.trailText || "",
+        body: a.fields?.bodyText || "",
+        image: a.fields?.thumbnail || null,
+        published: a.webPublicationDate,
+        source: "The Guardian",
+        url: a.webUrl,
+        category,
+        ageDays
+      };
+    });
+
+    // -------- ORDER CONTENT INTENTIONALLY (NEWEST FIRST)
+    const recent = articles.filter(a => a.category === "recent");
+    const relevant = articles.filter(a => a.category === "still-relevant");
+    const timeless = articles.filter(a => a.category === "timeless");
+
+    // Stable rotation (daily) for variety within each category
+    const seed = new Date().getDate();
+    const rotate = arr =>
+      arr.sort((a, b) =>
+        (a.id.charCodeAt(0) + seed) % 10 -
+        (b.id.charCodeAt(0) + seed) % 10
+      );
+
+    const ordered = [
+      ...rotate(recent),
+      ...rotate(relevant),
+      ...rotate(timeless)
+    ];
 
     res.json({
       page,
-      explainers: articles,
+      explainers: ordered,
       fallbackUsed: explainers.length > 0 ? false : true
     });
 
