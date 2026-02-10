@@ -472,6 +472,7 @@ app.get("/api/youtube", async (req, res) => {
 app.get("/api/local-news/:country", async (req, res) => {
   try {
     const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
+    const page = Number(req.query.page || 1);
     
     if (!NEWSDATA_API_KEY) {
       return res.status(500).json({ error: "Server misconfigured: missing NEWSDATA_API_KEY" });
@@ -494,7 +495,7 @@ app.get("/api/local-news/:country", async (req, res) => {
       return res.status(400).json({ error: "Invalid country" });
     }
 
-    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_API_KEY}&country=${countryCode}&language=en`;
+    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_API_KEY}&country=${countryCode}&language=en&page=${page}`;
 
     const response = await fetch(url);
     const data = await response.json();
@@ -507,7 +508,13 @@ app.get("/api/local-news/:country", async (req, res) => {
       link: article.link
     }));
 
-    res.json(articles);
+    res.json({
+      country: countrySlug,
+      page,
+      articles,
+      hasMore: data.nextPage !== null,
+      nextPage: data.nextPage
+    });
 
   } catch (err) {
     console.error("Local News API Error:", err.message);
