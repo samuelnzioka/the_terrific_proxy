@@ -467,6 +467,55 @@ app.get("/api/youtube", async (req, res) => {
 });
 
 // =========================
+//   LOCAL NEWS - NEWSDATA.IO API
+// =========================
+app.get("/api/local-news/:country", async (req, res) => {
+  try {
+    const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
+    
+    if (!NEWSDATA_API_KEY) {
+      return res.status(500).json({ error: "Server misconfigured: missing NEWSDATA_API_KEY" });
+    }
+
+    const countryMap = {
+      kenya: "ke",
+      "south-africa": "za",
+      nigeria: "ng",
+      uganda: "ug",
+      tanzania: "tz",
+      "burkina-faso": "bf",
+      ethiopia: "et"
+    };
+
+    const countrySlug = req.params.country;
+    const countryCode = countryMap[countrySlug];
+
+    if (!countryCode) {
+      return res.status(400).json({ error: "Invalid country" });
+    }
+
+    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_API_KEY}&country=${countryCode}&language=en`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    // Clean response (send only needed fields)
+    const articles = data.results.map(article => ({
+      title: article.title,
+      image: article.image_url,
+      summary: article.description,
+      link: article.link
+    }));
+
+    res.json(articles);
+
+  } catch (err) {
+    console.error("Local News API Error:", err.message);
+    res.status(500).json({ error: "Failed to fetch news" });
+  }
+});
+
+// =========================
 //   HEALTH CHECK
 // =========================
 app.get('/', (req, res) => {
