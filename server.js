@@ -495,7 +495,7 @@ app.get("/api/local-news/:country", async (req, res) => {
       return res.status(400).json({ error: "Invalid country" });
     }
 
-    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_API_KEY}&country=${countryCode}&language=en&page=${page}`;
+    const url = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_API_KEY}&country=${countryCode}&language=en`;
 
     const response = await fetch(url);
     const data = await response.json();
