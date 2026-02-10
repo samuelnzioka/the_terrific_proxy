@@ -508,13 +508,7 @@ app.get("/api/local-news/:country", async (req, res) => {
       link: article.link
     }));
 
-    res.json({
-      country: countrySlug,
-      page,
-      articles,
-      hasMore: data.nextPage !== null,
-      nextPage: data.nextPage
-    });
+    res.json(articles);
 
   } catch (err) {
     console.error("Local News API Error:", err.message);
