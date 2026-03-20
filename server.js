@@ -141,43 +141,93 @@ app.get("/api/wars/article", async (req, res) => {
 });
 
 // =========================
-//   REDDIT – MEMES (ENDLESS)
+//   REDDIT – MEMES (ENDLESS) - WITH CACHING AND RATE LIMIT PROTECTION
 // =========================
+
+// In-memory cache for first page only
+let memesCache = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 60000; // 60 seconds
+
+// Helper function to add delay
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 app.get("/api/memes", async (req, res) => {
   try {
-    const after = req.query.after || "";
+    const after = req.query.after || null;
+    const now = Date.now();
 
-    const url =
-      `https://old.reddit.com/r/PoliticalHumor+NonCredibleDefense/hot.json` +
-      `?limit=10&after=${after}`;
+    // Check cache for first page only (no after parameter)
+    if (!after && memesCache && (now - cacheTimestamp) < CACHE_DURATION) {
+      return res.json(memesCache);
+    }
+
+    // Add small delay to prevent Reddit spam
+    await delay(400);
+
+    // Build URL with new endpoint and parameters
+    let url = `https://www.reddit.com/r/PoliticalHumor+NonCredibleDefense/hot.json?limit=50`;
+    if (after) {
+      url += `&after=${after}`;
+    }
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TheTerrific/1.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "application/json",
+        "Connection": "keep-alive"
       }
     });
 
-    const data = await response.json();
+    // Handle Reddit blocking by checking response text first
+    const responseText = await response.text();
+    if (responseText.startsWith("<")) {
+      throw new Error("Reddit returned HTML (blocked)");
+    }
+
+    // Parse JSON manually after text check
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseErr) {
+      throw new Error("Failed to parse Reddit JSON response");
+    }
+
+    // Validate response structure
+    if (!data?.data?.children) {
+      throw new Error("Invalid Reddit response");
+    }
+
+    // Filter ONLY image posts
+    const imagePosts = data.data.children.filter(post => 
+      post.data.post_hint === "image" && post.data.url
+    );
+
+    // Map to required format
+    const memes = imagePosts.map(post => ({
+      title: post.data.title,
+      image: post.data.url,
+      subreddit: post.data.subreddit_name_prefixed,
+      permalink: `https://reddit.com${post.data.permalink}`
+    }));
 
     const result = {
       after: data.data.after,
-      memes: data.data.children.map(p => ({
-        title: p.data.title,
-        image: p.data.url,
-        subreddit: p.data.subreddit_name_prefixed,
-        permalink: `https://reddit.com${p.data.permalink}`
-      }))
+      memes: memes
     };
+
+    // Cache only the first page
+    if (!after) {
+      memesCache = result;
+      cacheTimestamp = now;
+    }
 
     res.json(result);
 
   } catch (err) {
     console.error("Reddit API Error:", err.message);
-    res.status(500).json({
-      error: "Failed to fetch memes",
-      details: err.message
-    });
+    // Fallback: return empty result instead of error status
+    res.json({ after: null, memes: [] });
   }
 });
 
